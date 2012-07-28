@@ -1,0 +1,55 @@
+#!/bin/sh
+
+### Usage: jft-deploy -h
+### Usage: jft-deploy -t HOSTS
+
+usage()
+{
+  perl -ne '/^### Usage:/ && do { s/^### ?//; print }' < $0
+  exit 1
+}
+
+help()
+{
+  perl -ne '/^###/ && do { s/^### ?//; print }' < $0
+  exit 0
+}
+
+HOSTS=
+eval set -- $(getopt -n $0 -o hs:t: -- ${1+"$@"})
+[ $? = 0 ] || usage
+
+for arg; do
+  case $arg in
+    -t) HOSTS="$2"; shift; shift ;;
+    -h) help ;;
+    --) shift; break ;;
+    -*) usage ;;
+  esac
+done
+
+[ $# = 0 ] || usage
+
+[ X"$HOSTS" = X ] && usage
+set -e
+for host in $HOSTS; do
+  h=${host%%@*}; htype=${host##*@}
+  sysprep="exec 2>&1; set -ex; hostname -f; \
+          mkdir -p /tmp/foo; cd /tmp/foo;  \
+          svn -q co svn+ssh://svn.cern.ch/reps/CMSDMWM/Infrastructure/trunk/Deployment cfg; \
+          [ ! -d /data/user ] || sudo chown \$USER:zh /data/user
+          cfg/Deploy -t dummy -s post \$PWD system/devvm; \
+          rm -fr /tmp/foo; cd /tmp; \
+          sudo yum -y install globus-proxy-utils.x86_64 \
+               globus-gridftp-server-progs.x86_64 globus-gass-copy-progs.x86_64 \
+               php-cli-5.1.6-32.el5; \
+          sudo sh -c 'echo \\\"/DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=mpetek/CN=676136/CN=Marko Petek\\\" mpetek > /etc/grid-security/grid-mapfile'; \
+          sudo sh -c 'echo \\\"/DC=org/DC=doegrids/OU=People/CN=Diego da Silva Gomes 849253\\\" diego >> /etc/grid-security/grid-mapfile'; \
+          sudo sh -c 'echo -e \"\\\$GLOBUS_TCP_PORT_RANGE 40000,45000\nport 2811\" > /etc/gridftp.conf'; \
+          sudo /sbin/iptables -I RH-Firewall-1-INPUT  4 -m state --state NEW -p tcp -m tcp --dport 2811 -j ACCEPT; \
+          sudo /sbin/iptables -I RH-Firewall-1-INPUT  5 -m state --state NEW -p tcp -m tcp --dport 40000:45000 -j ACCEPT; \
+          sudo /sbin/iptables-save; \
+          "
+  ssh -t $h sudo -H -u diego bashs -l -c "$sysprep"
+done
+exit 0

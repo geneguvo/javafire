@@ -1,0 +1,106 @@
+#!/bin/sh
+
+### Usage: jft-run -h
+### Usage: jft-run -n N
+### Usage: jft-run -f NODEFILE
+### Usage: jft-run -r CLIENT_RATE
+### Usage: jft-run -s <file size in bytes>
+### Usage: jft-run -b <block size in bytes>
+
+usage()
+{
+  perl -ne '/^### Usage:/ && do { s/^### ?//; print }' < $0
+  exit 1
+}
+
+help()
+{
+  perl -ne '/^###/ && do { s/^### ?//; print }' < $0
+  exit 0
+}
+
+HOSTS= N= RATE= FSIZE= BLKSIZE=
+eval set -- $(getopt -n $0 -o hs:n:f:r:s:b: -- ${1+"$@"})
+[ $? = 0 ] || usage
+
+for arg; do
+  case $arg in
+    -n) N="$2"; shift; shift ;;
+    -f) [ -f $2 ] && HOSTS=$(cat $2); shift; shift ;;
+    -r) RATE="$2"; shift; shift ;;
+    -s) FSIZE="$2"; shift; shift ;;
+    -b) BLKSIZE="$2"; shift; shift ;;
+    -h) help ;;
+    --) shift; break ;;
+    -*) usage ;;
+  esac
+done
+
+[ $# = 0 ] || usage
+
+[ X"$HOSTS" = X ] && usage
+[ X"$N" = X ] && usage
+[ $(echo $HOSTS | wc -w) -lt $N ] && 
+  { echo "Do not have enough nodes in the nodefile."; exit 1; }
+[ X"$RATE" = X ] && usage
+[ X"$FSIZE" = X ] && usage
+[ X"$BLKSIZE" = X ] && usage
+grid-proxy-info -exists ||
+  { echo "Proxy does not exist or expired"; exit 1; }
+
+set -e
+
+# Prepare to run
+HOSTS=$(echo $HOSTS | cut -d" " -f-$N)
+for host in $HOSTS; do
+  h=${host%%@*}; htype=${host##*@}
+  rsync -zavmH --delete -f '-s .svn' /data/cfg/ $h:/data/cfg/
+  (echo "exec 2>&1; set -ex; hostname -f; cd $PWD"
+   echo "sudo /etc/init.d/globus-gridftp-server restart"
+   echo "sudo /data/cfg/jft-shaper -i 20 -t $htype &"
+   echo "mkdir -p /data/state"
+   # start the node disconection simulator
+  ) | ssh $h bashs -l
+done
+for host in $HOSTS; do
+  h=${host%%@*}; htype=${host##*@}
+  FILE=/data/state/arquivao
+  (echo "[ -f $FILE ] && [ \$(stat -c%s $FILE) -ge $FSIZE ] || \\"
+   echo "   dd if=/dev/urandom of=$FILE bs=4k count=$(($FSIZE/4096+1))"
+   echo "split -a 5 -d -b $BLKSIZE $FILE ${FILE}."
+  ) | ssh $h bashs -l &
+done
+wait
+
+TMPFILES='/data/state/transfered*'
+trap "sudo /sbin/tc qdisc del dev seth0 root tbf; rm $TMPFILES" EXIT
+sudo /sbin/tc qdisc add dev seth0 root tbf rate $RATE latency 50ms burst 1540
+
+# Run
+rm -rf /data/state/transfered*
+rm -rf /data/state/out*
+rm -rf /data/state/arquivao
+ti=$(date +%s)
+c=$(( ($FSIZE+$BLKSIZE-1)/$BLKSIZE )) p=100000
+for host in $HOSTS; do
+  h=${host%%@*}; htype=${host##*@}
+  exec &> /data/state/out.$h
+  for i in $(seq $p $(($p+($c+$N-1)/$N - 1))); do
+    { tii=$(date +%s);
+      echo $i # $(( ($FSIZE - ${i#1}*$BLKSIZE - 1) % $BLKSIZE + 1))
+      globus-url-copy \
+        gsiftp://$h/data/state/arquivao.${i#1} \
+        file:///data/state/transfered.${i#1};
+      echo "${i#1} $tii $(date +%s)";
+    } &
+  done
+  p=$(($p+($c+$N-1)/$N))
+done
+exec 2> /dev/stderr 1> /dev/stdout
+wait
+dur=$((`date +%s` - $ti))
+echo "$N $RATE $FSIZE $BLKSIZE $dur" >> /data/state/stats
+cat /data/state/transfered.* >> /data/state/arquivao
+
+exit 0
+

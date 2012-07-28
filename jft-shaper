@@ -1,0 +1,51 @@
+#!/bin/sh
+
+### Usage: jft-shaper -h
+### Usage: jft-shaper -i INTERVAL
+### Usage: jft-shaper -t <adsl|institution|datacenter>
+
+usage()
+{
+  perl -ne '/^### Usage:/ && do { s/^### ?//; print }' < $0
+  exit 1
+}
+
+help()
+{
+  perl -ne '/^###/ && do { s/^### ?//; print }' < $0
+  exit 0
+}
+
+HOSTS=
+eval set -- $(getopt -n $0 -o hs:t: -- ${1+"$@"})
+[ $? = 0 ] || usage
+
+for arg; do
+  case $arg in
+    -i) INTVAL="$2"; shift; shift ;;
+    -t) TYPE="$2"; shift; shift ;;
+    -h) help ;;
+    --) shift; break ;;
+    -*) usage ;;
+  esac
+done
+
+[ $# = 0 ] || usage
+
+[ X"$TYPE" = X ] && usage
+[ -f /data/cfg/traces/$TYPE ] || 
+  { echo "Traces for $TYPE not found in /data/state"; exit 1; }
+[ X"$INTVAL" = X ] && usage
+
+trap "exit 0" SIGTERM
+trap "sudo /sbin/tc qdisc del dev seth0 root tbf" EXIT
+
+set -e
+while true; do
+  cat /data/cfg/traces/$TYPE | while read $r; do
+    sudo /sbin/tc qdisc add dev seth0 root tbf rate $r latency 50ms burst 1540
+    sleep $INTVAL
+  done 
+done
+
+exit 0

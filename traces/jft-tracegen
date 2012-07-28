@@ -1,0 +1,39 @@
+#!/bin/bash
+
+#lxfsrl4708 9208 1341006182 eth0 157051204454 5863.86 278291462018 123.58
+#lxfsrl4708 9208 1341006482 eth0 157051416177 705.74 278293292477 6101.53
+
+lemon-cli -m "9208" -c "c2cms/t1transfer" -s --script-mode --start 20120629T00:00 --end 20120629T23:59 > lemon.out
+
+hosts=$(cat lemon.out | awk '{ print $1 }' | sort -u)
+
+declare -a arr
+for c in $(seq 0 299); do let arr[$c]=0; done 
+
+for h in $hosts; do
+  let c=0
+  for ethout in $(grep $h lemon.out | awk '{ print $7 }'); do
+     arr[$c]=$(( ${arr[$c]} + $ethout ))
+     c=$(( $c + 1 ))
+  done
+done
+
+#echo sum after all hosts: ${arr[@]}
+
+declare -a arrstat
+for c in $(seq 0 298); do
+  prox=$(($c+1))
+  [ ${arr[$prox]} -gt 0 ] || break;
+  #echo "${arr[$prox]} - ${arr[$c]}"
+  arrstat[$c]=$(( (${arr[$prox]} - ${arr[$c]})/300 ))
+done
+
+#echo ${arrstat[@]}
+
+for c in $(seq 1 299); do
+  [ ${arrstat[$c]} -gt 0 ] || break;
+  ant=$(($c-1))
+  perc=$(echo "scale=3; ${arrstat[$c]} / ${arrstat[$ant]}" | bc)
+  echo ${arrstat[$ant]} $perc
+done
+
