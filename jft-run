@@ -1,11 +1,11 @@
 #!/bin/sh
 
 ### Usage: jft-run -h
-### Usage: jft-run -n N
-### Usage: jft-run -f NODEFILE
-### Usage: jft-run -r CLIENT_RATE
-### Usage: jft-run -s <file size in bytes>
-### Usage: jft-run -b <block size in bytes>
+### Usage: jft-run -f NODEFILE # file listing the list of available nodes (entries are hostname@type, see traces for available types)
+### Usage: jft-run -n N        # number of nodes from the nodefile to use
+### Usage: jft-run -r RATE     # limit this client bandwidth to RATE (units are: kbps, mbps, kbit, mbit or bps)
+### Usage: jft-run -s FSIZE    # file size in bytes
+### Usage: jft-run -b BLKSIZE  # block size in bytes
 
 usage()
 {
@@ -19,6 +19,7 @@ help()
   exit 0
 }
 
+# Parse command line arguments
 HOSTS= N= RATE= FSIZE= BLKSIZE=
 eval set -- $(getopt -n $0 -o hs:n:f:r:s:b: -- ${1+"$@"})
 [ $? = 0 ] || usage
@@ -65,6 +66,9 @@ done
 for host in $HOSTS; do
   h=${host%%@*}; htype=${host##*@}
   FILE=/data/state/arquivao
+  # Recreates FILE on each host if does not exist or size is not enough
+  # Then splits it in BLKSIZE different files due to gridftp limitations to
+  # to specify the byte range and to write in parallel to the same file 
   (echo "[ -f $FILE ] && [ \$(stat -c%s $FILE) -ge $FSIZE ] || \\"
    echo "   dd if=/dev/urandom of=$FILE bs=4k count=$(($FSIZE/4096+1))"
    echo "split -a 5 -d -b $BLKSIZE $FILE ${FILE}."
@@ -72,14 +76,22 @@ for host in $HOSTS; do
 done
 wait
 
+# Used to transfer each block separately
 TMPFILES='/data/state/transfered*'
+
+# Do allways clean tmp files upon exit
+# also reset the client bandwidth rate to default
 trap "sudo /sbin/tc qdisc del dev seth0 root tbf; rm $TMPFILES" EXIT
 sudo /sbin/tc qdisc add dev seth0 root tbf rate $RATE latency 50ms burst 1540
 
+#
 # Run
+#
+
+# Make sure it is clean
 rm -rf /data/state/transfered*
-rm -rf /data/state/out*
-rm -rf /data/state/arquivao
+rm -rf /data/state/out*        # stores each node's screen output
+rm -rf /data/state/arquivao    # final destine file
 ti=$(date +%s)
 c=$(( ($FSIZE+$BLKSIZE-1)/$BLKSIZE )) p=100000
 for host in $HOSTS; do
@@ -87,20 +99,25 @@ for host in $HOSTS; do
   exec &> /data/state/out.$h
   for i in $(seq $p $(($p+($c+$N-1)/$N - 1))); do
     { tii=$(date +%s);
-      echo $i # $(( ($FSIZE - ${i#1}*$BLKSIZE - 1) % $BLKSIZE + 1))
+      #echo $i # $(( ($FSIZE - ${i#1}*$BLKSIZE - 1) % $BLKSIZE + 1))
       globus-url-copy \
         gsiftp://$h/data/state/arquivao.${i#1} \
         file:///data/state/transfered.${i#1};
+
+      # debug output entries are: blocknr initial_time endtime
       echo "${i#1} $tii $(date +%s)";
     } &
   done
   p=$(($p+($c+$N-1)/$N))
 done
 exec 2> /dev/stderr 1> /dev/stdout
-wait
-dur=$((`date +%s` - $ti))
+wait # wait all processes to finish
+
+# prints statistics about the transfer
+dur=$((`date +%s` - $ti)) # total transfer duration time in seconds
 echo "$N $RATE $FSIZE $BLKSIZE $dur" >> /data/state/stats
+
+# reconstructs the file from the transfered blocks
 cat /data/state/transfered.* >> /data/state/arquivao
 
 exit 0
-

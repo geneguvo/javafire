@@ -1,8 +1,8 @@
 #!/bin/sh
 
 ### Usage: jft-shaper -h
-### Usage: jft-shaper -i INTERVAL
-### Usage: jft-shaper -t <adsl|institution|datacenter>
+### Usage: jft-shaper -i INTERVAL # interval in seconds
+### Usage: jft-shaper -t <adsl|institution|datacenter> # shapes this machine to traces of the type
 
 usage()
 {
@@ -16,7 +16,7 @@ help()
   exit 0
 }
 
-HOSTS=
+# Parse arguments
 eval set -- $(getopt -n $0 -o hs:t: -- ${1+"$@"})
 [ $? = 0 ] || usage
 
@@ -37,11 +37,13 @@ done
   { echo "Traces for $TYPE not found in /data/state"; exit 1; }
 [ X"$INTVAL" = X ] && usage
 
+# set to default rate upon exit
 trap "exit 0" SIGTERM
 trap "sudo /sbin/tc qdisc del dev seth0 root tbf" EXIT
 
 set -e
 while true; do
+  # loop reads traces and sets the rate at every INTVAL interval seconds
   cat /data/cfg/traces/$TYPE | while read $r; do
     sudo /sbin/tc qdisc add dev seth0 root tbf rate $r latency 50ms burst 1540
     sleep $INTVAL

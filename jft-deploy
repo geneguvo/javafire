@@ -1,7 +1,7 @@
 #!/bin/sh
 
 ### Usage: jft-deploy -h
-### Usage: jft-deploy -t HOSTS
+### Usage: jft-deploy -t HOSTS # host list between quotes, separated by spaces
 
 usage()
 {
@@ -15,6 +15,9 @@ help()
   exit 0
 }
 
+# Parse command line arguments
+# hs is the one argument help 'h'
+# t  requires a second argument, the host list between quotes
 HOSTS=
 eval set -- $(getopt -n $0 -o hs:t: -- ${1+"$@"})
 [ $? = 0 ] || usage
@@ -32,8 +35,8 @@ done
 
 [ X"$HOSTS" = X ] && usage
 set -e
-for host in $HOSTS; do
-  h=${host%%@*}; htype=${host##*@}
+for h in $HOSTS; do
+  # the Infrastructure/Deployment script install system RPMs like the CA certificates, bashs, etc..
   sysprep="exec 2>&1; set -ex; hostname -f; \
           mkdir -p /tmp/foo; cd /tmp/foo;  \
           svn -q co svn+ssh://svn.cern.ch/reps/CMSDMWM/Infrastructure/trunk/Deployment cfg; \

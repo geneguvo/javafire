@@ -1,12 +1,16 @@
-#!/bin/bash
+#!/bin/sh
 
 #lxfsrl4708 9208 1341006182 eth0 157051204454 5863.86 278291462018 123.58
 #lxfsrl4708 9208 1341006482 eth0 157051416177 705.74 278293292477 6101.53
 
+# + 9208 is the metric "networkInterfaceIO" 
+#   (see http://lemonweb.cern.ch/lemon-status/class_list.php?class=system.networkInterfaceIO)
+# + c2cms/t1transfer is the cluster name to get the aggregate traffic from
 lemon-cli -m "9208" -c "c2cms/t1transfer" -s --script-mode --start 20120629T00:00 --end 20120629T23:59 > lemon.out
 
 hosts=$(cat lemon.out | awk '{ print $1 }' | sort -u)
 
+# sets an empty array to store the (12 x 24 = 288) samples from lemon
 declare -a arr
 for c in $(seq 0 299); do let arr[$c]=0; done 
 
@@ -18,18 +22,20 @@ for h in $hosts; do
   done
 done
 
-#echo sum after all hosts: ${arr[@]}
-
+# arrstat stores the measured bytes/sec rate between two consecutive samples
+# we don't use NumKBWriteAvg because...
 declare -a arrstat
 for c in $(seq 0 298); do
   prox=$(($c+1))
   [ ${arr[$prox]} -gt 0 ] || break;
-  #echo "${arr[$prox]} - ${arr[$c]}"
   arrstat[$c]=$(( (${arr[$prox]} - ${arr[$c]})/300 ))
 done
 
-#echo ${arrstat[@]}
-
+# The perc tells how much the bytes/sec + or - varied.
+# We need it to be independent of the bandwidth of the machines, assuming we
+# can normalize from the max bandwidth available.
+# The absolute bytes/sec samples can be used only if we normalize them to meet
+# the shaped machine bandwidth.
 for c in $(seq 1 299); do
   [ ${arrstat[$c]} -gt 0 ] || break;
   ant=$(($c-1))
