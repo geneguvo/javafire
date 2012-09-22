@@ -3,6 +3,7 @@
 ### Usage: jft-shaper -h
 ### Usage: jft-shaper -i INTERVAL # interval in seconds
 ### Usage: jft-shaper -t <adsl|institution|datacenter> # shapes this machine to traces of the type
+### Usage: jft-shaper -b MAXBW # max bandwith of the target machine in kilobits per second
 
 usage()
 {
@@ -17,12 +18,13 @@ help()
 }
 
 # Parse arguments
-eval set -- $(getopt -n $0 -o hs:t: -- ${1+"$@"})
+eval set -- $(getopt -n $0 -o hs:t:i:b: -- ${1+"$@"})
 [ $? = 0 ] || usage
 
 for arg; do
   case $arg in
     -i) INTVAL="$2"; shift; shift ;;
+    -b) MAXBW="$2"; shift; shift ;;
     -t) TYPE="$2"; shift; shift ;;
     -h) help ;;
     --) shift; break ;;
@@ -36,17 +38,21 @@ done
 [ -f /data/cfg/traces/$TYPE ] || 
   { echo "Traces for $TYPE not found in /data/state"; exit 1; }
 [ X"$INTVAL" = X ] && usage
+[ X"$MAXBW" = X ] && usage
 
 # set to default rate upon exit
-trap "exit 0" SIGTERM
+trap "exit 0" SIGTERM SIGINT
 trap "sudo /sbin/tc qdisc del dev seth0 root tbf" EXIT
 
 set -e
 while true; do
   # loop reads traces and sets the rate at every INTVAL interval seconds
-  cat /data/cfg/traces/$TYPE | while read $r; do
-    sudo /sbin/tc qdisc add dev seth0 root tbf rate $r latency 50ms burst 1540
+  cat /data/cfg/traces/$TYPE | while read p; do
+    r=$(echo "scale=0; $p * $MAXBW / 1.0" | bc)
+    echo rate is $r and perc is $p and MAXBW is $MAXBW
+    (sudo /sbin/tc qdisc add dev seth0 root tbf rate ${r}kbit latency 50ms burst 1540)
     sleep $INTVAL
+    (sudo /sbin/tc qdisc del dev seth0 root tbf)
   done 
 done
 
