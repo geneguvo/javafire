@@ -54,17 +54,18 @@ set -e
 # Prepare to run
 HOSTS=$(echo $HOSTS | cut -d" " -f-$N)
 for host in $HOSTS; do
-  h=${host%%@*}; htype=${host##*@}
+  h=${host%%@*}; htype=$(echo ${host##*@} | cut -d"/" -f1)
+  hmaxbw=${host##*/}
   rsync -zavmH --delete -f '-s .svn' /data/cfg/ $h:/data/cfg/
   (echo "exec 2>&1; set -ex; hostname -f; cd $PWD"
    echo "sudo /etc/init.d/globus-gridftp-server restart"
-   echo "sudo /data/cfg/jft-shaper -i 20 -t $htype &"
    echo "mkdir -p /data/state"
+   echo "sudo nohup /data/cfg/jft-shaper -i 20 -t $htype -b $hmaxbw &> /data/state/shaper.out &"
    # start the node disconection simulator
   ) | ssh $h bashs -l
 done
 for host in $HOSTS; do
-  h=${host%%@*}; htype=${host##*@}
+  h=${host%%@*}; htype=$(echo ${host##*@} | cut -d"/" -f1)
   FILE=/data/state/arquivao
   # Recreates FILE on each host if does not exist or size is not enough
   # Then splits it in BLKSIZE different files due to gridftp limitations to
@@ -81,12 +82,21 @@ TMPFILES='/data/state/transfered*'
 
 # Do allways clean tmp files upon exit
 # also reset the client bandwidth rate to default
-trap "sudo /sbin/tc qdisc del dev seth0 root tbf; rm $TMPFILES" EXIT
+trap "sudo /sbin/tc qdisc del dev seth0 root tbf; \
+      set -x;
+      rm $TMPFILES; \
+      for host in \$HOSTS; do \
+        ssh \${host%%@*} bashs -c 'echo test; /usr/bin/sudo /usr/bin/killall jft-shaper'; \
+      done;" EXIT SIGTERM SIGINT
+
+# Set the client bandwidth
 sudo /sbin/tc qdisc add dev seth0 root tbf rate $RATE latency 50ms burst 1540
 
 #
 # Run
 #
+echo "Starting the transfer..."
+exec 3>&1 4>&2 # save stdout and stderr
 
 # Make sure it is clean
 rm -rf /data/state/transfered*
@@ -95,7 +105,7 @@ rm -rf /data/state/arquivao    # final destine file
 ti=$(date +%s)
 c=$(( ($FSIZE+$BLKSIZE-1)/$BLKSIZE )) p=100000
 for host in $HOSTS; do
-  h=${host%%@*}; htype=${host##*@}
+  h=${host%%@*}; htype=$(echo ${host##*@} | cut -d"/" -f1)
   exec &> /data/state/out.$h
   for i in $(seq $p $(($p+($c+$N-1)/$N - 1))); do
     { tii=$(date +%s);
@@ -110,7 +120,7 @@ for host in $HOSTS; do
   done
   p=$(($p+($c+$N-1)/$N))
 done
-exec 2> /dev/stderr 1> /dev/stdout
+exec 1>&3 2>&4 # restore stdout and stderr
 wait # wait all processes to finish
 
 # prints statistics about the transfer
@@ -120,4 +130,5 @@ echo "$N $RATE $FSIZE $BLKSIZE $dur" >> /data/state/stats
 # reconstructs the file from the transfered blocks
 cat /data/state/transfered.* >> /data/state/arquivao
 
+echo "Done."
 exit 0
