@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# 3 4000kbit 50000000 100000000 287
+# 3 4000kbit 50000000 1000000000 2037
+# sources clientbw blksize filesize time
+
+set -x 
+
+infile=$1
+
+cat $infile | awk '{ print $1, $2, $3; }' | sort -u | while read t; do
+  (echo "set terminal png;"
+   echo "set output '~/www/$(echo $t|tr ' ' '_').png';"
+   echo "set xlabel 'File size (MBytes)';"
+   echo "set ylabel 'Time (s)';"
+   echo "set yrange [0:3600]"
+   echo "set xrange [5:1000]"
+   echo "unset key;"
+   echo "plot '-' using (\$4)/1024/1024:5;"
+   grep "$t" $infile ) | gnuplot
+done
+
