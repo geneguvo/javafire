@@ -56,11 +56,13 @@ HOSTS=$(echo $HOSTS | cut -d" " -f-$N)
 for host in $HOSTS; do
   h=${host%%@*}; htype=$(echo ${host##*@} | cut -d"/" -f1)
   hmaxbw=${host##*/}
-  rsync -zavmH --delete -f '-s .svn' /data/cfg/ $h:/data/cfg/
+  echo "Preparing $h..."
+  ssh $h sudo chown -R $USER:zh /data/{state,cfg}
+  rsync -zavmH --delete -f '-s .svn' -f '-s .git' /data/cfg/ $h:/data/cfg/
   (echo "exec 2>&1; set -ex; hostname -f; cd $PWD"
    echo "sudo /etc/init.d/globus-gridftp-server restart"
    echo "mkdir -p /data/state"
-   echo "sudo nohup /data/cfg/jft-shaper -i 20 -t $htype -b $hmaxbw &> /data/state/shaper.out &"
+   echo "sudo nohup /data/cfg/jft-shaper -i 120 -t $htype -b $hmaxbw &> /data/state/shaper.out &"
    # start the node disconection simulator
   ) | ssh $h bashs -l
 done

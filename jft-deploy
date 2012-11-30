@@ -38,9 +38,10 @@ set -e
 for h in $HOSTS; do
   # the Infrastructure/Deployment script install system RPMs like the CA certificates, bashs, etc..
   sysprep="exec 2>&1; set -ex; hostname -f; \
-          mkdir -p /tmp/foo; cd /tmp/foo;  \
-          svn -q co svn+ssh://svn.cern.ch/reps/CMSDMWM/Infrastructure/trunk/Deployment cfg; \
-          [ ! -d /data/user ] || sudo chown \$USER:zh /data/user
+          rm -rf /tmp/foo; mkdir -p /tmp/foo; cd /tmp/foo;  \
+          sudo yum install git.x86_64; \
+          git clone https://github.com/dmwm/deployment.git cfg; \
+          [ ! -d /data/user ] || sudo chown \$USER:zh /data/user; \
           cfg/Deploy -t dummy -s post \$PWD system/devvm; \
           rm -fr /tmp/foo; cd /tmp; \
           sudo yum -y install globus-proxy-utils.x86_64 \
@@ -53,6 +54,6 @@ for h in $HOSTS; do
           sudo /sbin/iptables -I RH-Firewall-1-INPUT  5 -m state --state NEW -p tcp -m tcp --dport 40000:45000 -j ACCEPT; \
           sudo /sbin/iptables-save; \
           "
-  ssh -t $h sudo -H -u diego bashs -l -c "$sysprep"
+  ssh -t $h sudo -H -u $USER bashs -l -c "$sysprep"
 done
 exit 0
