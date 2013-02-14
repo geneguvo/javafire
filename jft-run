@@ -127,7 +127,7 @@ wait # wait all processes to finish
 
 # prints statistics about the transfer
 dur=$((`date +%s` - $ti)) # total transfer duration time in seconds
-echo "$N $RATE $FSIZE $BLKSIZE $dur" >> /data/state/stats
+echo "$N $RATE $BLKSIZE $FSIZE $dur" >> /data/state/stats
 
 # reconstructs the file from the transfered blocks
 cat /data/state/transfered.* >> /data/state/arquivao
