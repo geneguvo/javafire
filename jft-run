@@ -132,5 +132,8 @@ echo "$N $RATE $BLKSIZE $FSIZE $dur" >> /data/state/stats
 # reconstructs the file from the transfered blocks
 cat /data/state/transfered.* >> /data/state/arquivao
 
+# generate plots
+/data/cfg/jft-plot /data/state/stats
+
 echo "Done."
 exit 0
