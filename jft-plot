@@ -16,7 +16,7 @@ cat $infile | awk '{ print $1, $2, $3; }' | sort -u | while read t; do
    echo "set yrange [0:3600]"
    echo "set xrange [5:1000]"
    echo "unset key;"
-   echo "plot '-' using (\$4)/1024/1024:5;"
+   echo "plot '-' using (\$4)/1024/1024:5 with points pt 9;"
    grep "$t" $infile ) | gnuplot
 done
 
