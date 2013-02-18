@@ -57,7 +57,7 @@ for host in $HOSTS; do
   h=${host%%@*}; htype=$(echo ${host##*@} | cut -d"/" -f1)
   hmaxbw=${host##*/}
   echo "Preparing $h..."
-  ssh $h sudo chown -R $USER:zh /data/{state,cfg}
+  ssh $h sudo chown -R $USER:zh /data/{state,cfg} 2> /dev/null | true
   rsync -zavmH --delete -f '-s .svn' -f '-s .git' /data/cfg/ $h:/data/cfg/
   (echo "exec 2>&1; set -ex; hostname -f; cd $PWD"
    echo "sudo /etc/init.d/globus-gridftp-server restart"
